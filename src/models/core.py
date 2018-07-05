@@ -24,7 +24,8 @@ def compute_distance(x, y):
 
 # ServiceUnit class
 class ServiceUnit:
-    def __init__(self, service, name, unit_id, position, scale,
+
+    def __init__(self, service, name, unit_id, position, relative_capacity=1,
                  age_diffusion=None, kernel_thresholds=None,
                  attributes=None):
         assert isinstance(
@@ -32,8 +33,8 @@ class ServiceUnit:
         assert isinstance(
             service, ServiceType), 'Service must belong to the Eum'
         assert isinstance(name, str), 'Name must be a string'
-        assert (np.isscalar(scale)) & \
-               (scale > 0), 'Scale must be a positive scalar'
+        assert (np.isscalar(relative_capacity)) & (relative_capacity > 0),\
+            'Relative capacity must be a positive scalar'
         assert set(age_diffusion.keys()) <= set(
             AgeGroup.all()), 'Diffusion keys should be AgeGroups'
         if not attributes:
@@ -51,21 +52,22 @@ class ServiceUnit:
         self.name = name
         self.id = unit_id
         self.service = service
-
-        # A ServiceType can have many sites, so each unit has its own.
-        # Moreover, a site is not uniquely assigned to a service
-        self.site = position
-        self.coord_tuple = (position.latitude, position.longitude)
-
-        self.scale = scale  # store scale info
         self.attributes = attributes  # dictionary
 
-        # how the service availability area varies for different age groups
+        # A position is not uniquely assigned to a service
+        self.position = position
+        self.coord_tuple = (position.latitude, position.longitude)
+
+        # Deal with the service propagation
+        self.relative_capacity = relative_capacity
+
+        # how the service availability kernel varies for different age groups
         self.age_diffusion = age_diffusion
 
-        # define kernel taking scale into account
-        self.kernel = {g: gaussKern(length_scale=l * self.scale)
-                       for g, l in self.age_diffusion.items()}
+        # define kernel taking relative_capacity into account
+        self.kernel = {g: gaussKern(
+            length_scale=(self.relative_capacity ** 0.5) * l)
+            for g, l in self.age_diffusion.items()}
 
         # precompute kernel threshold per AgeGroup
         # initialise to Inf
@@ -104,7 +106,8 @@ class ServiceUnit:
                     x, np.array([[0], ])) - common_cfg.kernel_value_cutoff
                 return out.flatten()
 
-            initial_guess = common_cfg.kernel_start_zero_guess * self.scale
+            initial_guess = common_cfg.kernel_start_zero_guess * \
+                            self.relative_capacity
 
             for k in range(3):  # try 3 alternatives
                 solution_value, _, flag, msg = \
@@ -353,7 +356,7 @@ class ServiceEvaluator:
             if service_units:
                 self.service_positions[service_type] = \
                     MappedPositionsFrame.from_geopy_points(
-                        [u.site for u in service_units])
+                        [u.position for u in service_units])
             else:
                 continue  # no units for this servicetype, do not create key
 
@@ -363,7 +366,8 @@ class ServiceEvaluator:
         for service_type, service_units in self.units_tree.items():
             if service_units:
                 out[service_type] = np.array(
-                    [u.attendance for u in service_units])
+                    [[u.attendance, u.relative_capacity]
+                     for u in service_units])
             else:
                 continue  # no units for this service type, do not create key
         return out
@@ -371,7 +375,7 @@ class ServiceEvaluator:
     @property
     def attendance_means(self):
         return pd.Series(
-            {service_type: attendance.mean() for service_type, attendance
+            {service_type: attendance[:, 0].mean() for service_type, attendance
              in self.attendance_tree.items()})
 
     def get_interactions_at(self, targets_coord_array):
@@ -482,12 +486,18 @@ class ServiceEvaluator:
         out = {}
 
         for service_type, attendance_values in self.attendance_tree.items():
-            # get ratios
-            raw_ratios = attendance_values / attendance_values.mean()
-            np.nan_to_num(raw_ratios, copy=False)  # this replaces Nan with 0
+            # get raw loads with respect to reference level
+            print('WARNING: using on-the-fly mean as reference for attendance')
+            raw_loads = attendance_values[:,0] / attendance_values.mean()
+
+            # correct for relative capacities of the various units
+            asdjusted_loads = raw_loads / attendance_values[:,1]
+
+            # this replaces Nan with 0
+            np.nan_to_num(asdjusted_loads, copy=False)
             # Apply [1/m, m] clipping to raw ratios
             out[service_type] = 1 / np.clip(
-                raw_ratios, 1 / clip_level, clip_level)
+                asdjusted_loads, 1 / clip_level, clip_level)
         return out
 
     def get_aggregate_values_from_interactions(
@@ -684,7 +694,7 @@ class KPICalculator:
                     self.demand.mapped_positions.Lat,
                     c='b', s=self.demand.P1, marker='.')
         for a in plot_units:
-            plt.scatter(a.site.longitude, a.site.latitude,
+            plt.scatter(a.position.longitude, a.position.latitude,
                         c='red', marker='.', s=a.attendance / 10)
         if not plot_units:
             print('NO UNITS!')

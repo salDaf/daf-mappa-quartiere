@@ -149,7 +149,7 @@ class SchoolFactory(UnitFactory):
 
         attendance_proxy = propert_data[self.scale_proxy_col].copy()
 
-        # set the scale to be proportional
+        # set the relative_capacity to be proportional
         # to the square root of number of children
         scale_data = attendance_proxy ** size_power_law
 
@@ -177,7 +177,7 @@ class SchoolFactory(UnitFactory):
                     unit_id=row_data[self.id_col],
                     position=type_locations[i_unit],
                     age_diffusion=type_age_dict[school_type],
-                    scale=row_data[self.kernel_scale_col],
+                    relative_capacity=row_data[self.kernel_scale_col],
                     attributes=attr_dict)
 
                 if not attr_dict['Public'] and private_rescaling != 1:
@@ -238,7 +238,7 @@ class LibraryFactory(UnitFactory):
                 this_unit = ServiceUnit(self.servicetype,
                                         name=row_data[self.name_col],
                                         unit_id=row_data[self.id_col],
-                                        scale=mean_radius,
+                                        relative_capacity=mean_radius,
                                         position=type_locations[i_unit],
                                         age_diffusion=type_age_dict[lib_type],
                                         attributes=attr_dict)
@@ -287,7 +287,7 @@ class TransportStopFactory(UnitFactory):
                 name=row_data[self.name_col],
                 unit_id=row_data[self.id_col],
                 position=locations[i_unit],
-                scale=scale_dict[unit_route_type],
+                relative_capacity=scale_dict[unit_route_type],
                 age_diffusion={ g: 1 for g in AgeGroup.all_but(
                         [AgeGroup.Newborn, AgeGroup.Kinder])},
                 kernel_thresholds=cached_thresholds,
@@ -318,7 +318,7 @@ class PharmacyFactory(UnitFactory):
             'Descrizione': 'DESCRIZIONEFARMACIA', 'PartitaIva': 'PARTITAIVA'}
 
         unit_list = []
-        # We assume all pharmacies share the same scale, so only one
+        # We assume all pharmacies share the same relative_capacity, so only one
         # threshold is necessary
         cached_thresholds = None
         for i_unit in range(propert_data.shape[0]):
@@ -330,7 +330,7 @@ class PharmacyFactory(UnitFactory):
                 name=row_data[self.name_col].astype(str),
                 unit_id=row_data[self.id_col],
                 position=locations[i_unit],
-                scale=mean_radius,
+                relative_capacity=mean_radius,
                 age_diffusion={g: 1 for g in AgeGroup.all()},
                 kernel_thresholds=cached_thresholds,
                 attributes=attr_dict)
